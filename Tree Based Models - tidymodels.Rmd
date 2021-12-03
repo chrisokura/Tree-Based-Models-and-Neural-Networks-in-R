@@ -1,0 +1,169 @@
+---
+title: "Random Forests Activity"
+author: "Chris Okura"
+date: "11/30/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+library(tidymodels)
+library(ISLR)
+df <- Carseats
+car_recipe <- recipe(Sales ~ ., 
+                     data = df) 
+```
+
+### 1. Fit a single decision tree to the entire dataset. Report the cross-validated metrics.
+```{r}
+car_recipe <- recipe(Sales ~ ., 
+                     data = df) 
+
+tree_mod <- decision_tree() %>%
+  set_engine("rpart") %>%
+  set_mode("regression")
+
+tree_wflow <- workflow() %>%
+  add_recipe(car_recipe) %>%
+  add_model(tree_mod)
+
+folds = vfold_cv(df, v = 5)
+
+
+tree_fit <- tree_wflow %>%
+  fit_resamples(folds)
+
+tree_fit %>% collect_metrics()
+
+
+```
+### 2. Now, tune your decision tree according to cost_complexity, tree_depth, and min_n to identify the best decision tree model. Report the cross-validated metrics. Plot the final tree and interpret the results.
+```{r}
+tune_spec <- 
+  decision_tree(
+    cost_complexity = tune(),
+    tree_depth = tune(), 
+    min_n = tune()
+  ) %>% 
+  set_engine("rpart") %>% 
+  set_mode("regression")
+
+tree_grid <- grid_regular(cost_complexity(),
+                          tree_depth(),
+                          min_n(),
+                          levels = 2)
+
+```
+
+
+```{r}
+ tree_wf <- workflow() %>%
+  add_model(tune_spec) %>%
+  add_recipe(car_recipe)
+
+tree_res <- 
+  tree_wf %>% 
+  tune_grid(
+    resamples = folds,
+    grid = tree_grid
+    )
+
+```
+
+
+```{r}
+tree_res %>% collect_metrics() %>% filter(.metric == "rsq") %>% arrange(desc(mean))
+
+```
+
+```{r}
+library(rpart.plot)
+
+best_tree <- tree_res %>%
+  select_best("rsq")
+
+final_wf <- 
+  tree_wf %>% 
+  finalize_workflow(best_tree)
+
+tree_fit_1 <- final_wf %>% fit(df)
+
+tree_fitted <- tree_fit_1 %>% 
+  pull_workflow_fit()
+rpart.plot(tree_fitted$fit)
+```
+
+### 3. Determine the best random forest model for these data and report the cross-validated metrics. Is this model better or worse then the single decision tree?
+
+The best random forest model was better than the decision tree model. The random forest model had an r-squared of .715 and the decision tree had an r-squared of .44.
+
+```{r}
+forest_mod <- rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
+  set_engine("ranger") %>%
+  set_mode("regression")
+
+forest_wflow <- workflow() %>%
+  add_recipe(car_recipe) %>%
+  add_model(forest_mod)
+
+set.seed(1)
+
+forest_res <-
+  tune_grid(
+    forest_wflow,
+    resamples = folds,
+    grid = 25,
+    control = control_grid(save_pred = TRUE),
+            metrics = metric_set(rsq)
+  )
+
+forest_res %>% 
+  show_best(metric = "rsq")
+```
+
+```{r warning = FALSE}
+last_rf_mod <- 
+  rand_forest(mtry = 5, min_n = 7, trees = 890) %>% 
+  set_engine("ranger", importance = "impurity") %>% 
+  set_mode("regression")
+
+last_rf_workflow <- 
+  forest_wflow %>% 
+  update_model(last_rf_mod)
+
+set.seed(1)
+last_rf_fit <- 
+  last_rf_workflow %>% 
+  fit(df)
+
+last_rf_fit %>% pull_workflow_fit()
+last_rf_fit %>% extract_fit_parsnip()
+```
+
+### 4
+
+```{r}
+library(vip)
+
+last_rf_fit %>% 
+  pull_workflow_fit() %>% 
+  vip(num_features = 20)
+```
+
+### 5. Explain what these variable importance scores represent as if you’re describing them to someone who is new to random forests.
+
+The graph shows what variables are most important in determining our target variable Sales. The two most important factors are price and shelve location. 
+
+
+
+
+
+
+
+
+
+
+

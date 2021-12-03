@@ -1,0 +1,86 @@
+---
+title: "Neural Network Practice Activity"
+author: "Chris Okura"
+date: "12/2/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+library(tidymodels)
+library(ISLR)
+```
+
+### 1. Fit a neural network to the entire dataset. Report the cross-validated metrics.
+```{r}
+df <- Carseats
+car_recipe <- recipe(Sales ~ ., 
+                     data = df) 
+nn_mod <- mlp(
+  hidden_units = 12,
+  penalty = .01,
+  epochs = 100,
+  activation = "linear"
+) %>%
+  set_engine("nnet") %>%
+  set_mode("regression")
+
+nn_wflow <- workflow() %>%
+  add_recipe(car_recipe) %>%
+  add_model(nn_mod)
+
+```
+
+```{r}
+folds = vfold_cv(df, v = 5)
+
+nn_fit <- nn_wflow %>%
+  fit_resamples(folds)
+
+nn_fit %>% collect_metrics()
+```
+
+
+### 2. Now, tune your neural network according to hidden_units and penalty to identify the best neural network model. Report the cross-validated metrics. Remember to consider the size of your dataset when specifying your model(s).
+```{r}
+nn_grid <- grid_regular(
+  hidden_units(c(2, 12)),
+  penalty(c(-5, 0)),
+  levels = 3
+)
+
+nn_mod <- mlp(
+  hidden_units = tune(),
+  penalty = tune(),
+  epochs = 100,
+  activation = "linear"
+) %>%
+  set_engine("nnet") %>%
+  set_mode("regression")
+
+nn_wflow <- workflow() %>%
+  add_recipe(car_recipe) %>%
+  add_model(nn_mod)
+```
+
+```{r}
+nn_grid_search <-
+  tune_grid(
+    nn_wflow,
+    resamples = folds,
+    grid = nn_grid
+  )
+tuning_metrics <- nn_grid_search %>%
+  collect_metrics()
+tuning_metrics %>% filter(.metric == "rsq") %>% arrange(desc(mean))
+```
+
+### 3. Are more hidden units necessarily better?
+More hidden layers are not necessarily better. The model performance is dependent on the other hyperparameters as well. 
+
+
+### 4. How do these results compare to your previous results using decision trees and random forests?
+The neural network performed better than both the decision tree and random forest models.
